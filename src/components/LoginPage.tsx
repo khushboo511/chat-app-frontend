@@ -1,126 +1,60 @@
-import React, { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { Mail, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
-import { Button } from './ui/Button';
-// import { Button } from '@/components/ui/button';
-// import { Input } from '@/components/ui/input';
-// import { Label } from '@/components/ui/label';
-// import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-// import { Alert, AlertDescription } from '@/components/ui/alert';
-// import { useToast } from '@/hooks/use-toast';
-
-interface LoginFormData {
-  email: string;
-}
-
-interface LoginResponse {
-  success: boolean;
-  message: string;
-  data?: any;
-}
-
-interface LoginError {
-  message: string;
-  code?: string;
-  status?: number;
-}
-
-const loginApi = async (data: LoginFormData): Promise<LoginResponse> => {
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  if (!data.email) {
-    throw new Error('Email is required');
-  }
-  
-  if (!data.email.includes('@')) {
-    throw new Error('Please enter a valid email address');
-  }
-  
-  if (data.email === 'error@example.com') {
-    throw new Error('Something went wrong. Please try again.');
-  }
-  
-  if (data.email === 'notfound@example.com') {
-    throw new Error('No account found with this email address');
-  }
-  
-  return {
-    success: true,
-    message: 'Verification email sent successfully!',
-    data: { userId: '123', email: data.email }
-  };
-};
+import React, { useState } from "react";
+import { Mail, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { useToast } from "./hooks/useToast";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "./ui/button";
+import { useMagicLink } from "@/hooks/useLogin";
 
 export const LoginPage: React.FC = () => {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
   const { toast } = useToast();
+  const { sendMagicLinkMutation } = useMagicLink();
 
-  const {
-    mutate: login,
-    isPending,
-    error,
-  } = useMutation({
-    mutationFn: loginApi,
-    onSuccess: (data) => {
-      setShowSuccess(true);
-      toast({
-        title: "Success!",
-        description: data.message,
-        className: "border-success text-success-foreground"
-      });
-      
-      setEmail('');
-      
-      setTimeout(() => {
-        setShowSuccess(false);
-      }, 5000);
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Login Failed",
-        description: error.message,
-        variant: "destructive"
-      });
-    }
-  });
+  const { mutate: login, isPending, error } = sendMagicLinkMutation;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!email.trim()) {
       toast({
         title: "Validation Error",
         description: "Please enter your email address",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
-
-    if (!email.includes('@') || !email.includes('.')) {
+    if (!email.includes("@") || !email.includes(".")) {
       toast({
         title: "Validation Error",
         description: "Please enter a valid email address",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
-
     login({ email: email.trim() });
+    setShowSuccess(true);
   };
-
 
   if (showSuccess) {
     return (
-      <div className="min-h-screen bg-gradient-subtle flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-slate-100 to-slate-200 dark:from-zinc-900 dark:to-zinc-800">
         <div className="w-full max-w-md animate-scale-in">
-          <Card className="shadow-elegant border-0">
+          <Card className="shadow-lg border-0">
             <CardHeader className="text-center space-y-6">
-              <div className="mx-auto w-16 h-16 bg-success rounded-full flex items-center justify-center animate-pulse-glow">
-                <CheckCircle className="w-8 h-8 text-success-foreground" />
+              <div className="mx-auto w-16 h-16 bg-green-600 rounded-full flex items-center justify-center animate-pulse">
+                <CheckCircle className="w-8 h-8 text-white" />
               </div>
               <div>
-                <CardTitle className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+                <CardTitle className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-400 bg-clip-text text-transparent">
                   Check Your Email
                 </CardTitle>
                 <CardDescription className="text-base mt-2">
@@ -131,9 +65,9 @@ export const LoginPage: React.FC = () => {
             <CardContent className="space-y-6">
               <div className="text-center text-sm text-muted-foreground">
                 <p>Didn't receive the email? Check your spam folder or</p>
-                <Button 
-                  variant="link" 
-                  className="p-0 h-auto font-medium text-primary hover:text-primary-glow"
+                <Button
+                  variant="link"
+                  className="p-0 h-auto font-medium text-indigo-600 hover:text-indigo-400"
                   onClick={() => setShowSuccess(false)}
                 >
                   try again
@@ -147,15 +81,15 @@ export const LoginPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-subtle flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-slate-100 to-slate-200 dark:from-zinc-900 dark:to-zinc-800">
       <div className="w-full max-w-md animate-fade-in">
-        <Card className="shadow-elegant border-0">
+        <Card className="shadow-lg border-0">
           <CardHeader className="text-center space-y-6">
-            <div className="mx-auto w-16 h-16 bg-gradient-primary rounded-full flex items-center justify-center shadow-glow">
-              <Mail className="w-8 h-8 text-primary-foreground" />
+            <div className="mx-auto w-16 h-16 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-full flex items-center justify-center shadow-md">
+              <Mail className="w-8 h-8 text-white" />
             </div>
             <div>
-              <CardTitle className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+              <CardTitle className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
                 Welcome Back
               </CardTitle>
               <CardDescription className="text-base mt-2">
@@ -176,9 +110,11 @@ export const LoginPage: React.FC = () => {
                     type="email"
                     placeholder="Enter your email address"
                     value={email}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setEmail(e.target.value)
+                    }
                     disabled={isPending}
-                    className="pl-10 h-12 transition-smooth focus:shadow-glow"
+                    className="pl-10 h-12 transition-all focus:ring-2 focus:ring-indigo-600"
                     autoComplete="email"
                     autoFocus
                   />
@@ -189,15 +125,13 @@ export const LoginPage: React.FC = () => {
               {error && (
                 <Alert variant="destructive" className="animate-scale-in">
                   <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    {error.message}
-                  </AlertDescription>
+                  <AlertDescription>{error.message}</AlertDescription>
                 </Alert>
               )}
 
-              <Button 
-                type="submit" 
-                className="w-full h-12 bg-gradient-primary hover:shadow-glow transition-smooth font-medium"
+              <Button
+                type="submit"
+                className="w-full h-12 bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-lg font-medium"
                 disabled={isPending || !email.trim()}
               >
                 {isPending ? (
@@ -222,8 +156,7 @@ export const LoginPage: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Demo Information */}
-        <div className="mt-6 p-4 bg-card rounded-lg border border-border/50 text-sm text-muted-foreground">
+        <div className="mt-6 p-4 bg-white rounded-lg border border-gray-200 text-sm text-muted-foreground dark:bg-zinc-800 dark:border-zinc-700">
           <p className="font-medium mb-2">Demo Information:</p>
           <ul className="space-y-1 text-xs">
             <li>• Use any valid email for success</li>
