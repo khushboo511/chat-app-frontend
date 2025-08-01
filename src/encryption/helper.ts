@@ -16,4 +16,3 @@ export function getDeviceName(): string {
     if (/Win/i.test(ua)) return "Windows";
     return "Web";
   }
-  

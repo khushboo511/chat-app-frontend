@@ -16,6 +16,8 @@ import { Send, Search, MoreVertical, Phone, Video } from "lucide-react";
 import { useGetUserRooms } from "@/hooks/useGetUserRooms";
 import { getDeviceName, getOrCreateDeviceId } from "@/encryption/helper";
 import { getDisplayTime, getInitials } from "@/lib/chatHelper";
+import { useGetUserAllMessages } from "@/services/message.service";
+import { isBase64 } from "validator";
 
 interface Message {
   _id: string;
@@ -28,39 +30,35 @@ interface Message {
   roomId: string;
 }
 
-// interface Room {
-//   _id: string;
-//   name: string;
-//   participants: Array<{ _id: string; name: string; email: string }>;
-// }
 const socket: Socket = io("http://localhost:3016", {
   withCredentials: true,
   query: {
-    userId: "6874e1725bdf18aa80e1270d",
+    userId: "688c9441a32bcf8f56cf2aea",
   },
 });
 
 export default function Chat() {
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const { data: rooms } = useGetUserRooms();
   const [roomMessages, setRoomMessages] = useState<Record<string, Message[]>>(
     {}
   );
-  const userId = "6874e1725bdf18aa80e1270d";
+  const userId = "687601737beb50c26dce8f8a";
+  console.log(selectedRoomId, "selected room id");
+
+  const { data: userMessagesFromApi } = useGetUserAllMessages(selectedRoomId);
 
   const [fingerprint, setFingerprint] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const store = useRef<SignalProtocolStore | null>(null);
 
   const deviceId = getOrCreateDeviceId();
   const deviceName = getDeviceName();
   useEffect(() => {
     generateUserKeys(userId, deviceId, deviceName)
       .then(async (s) => {
-        store.current = s;
+        // store.current = s;
         // const fp = await getIdentityFingerprint(s);
         // setFingerprint(fp);
         // console.log("fingerprint (inside .then)", fp);
@@ -69,75 +67,6 @@ export default function Chat() {
         console.error("Error initializing keys:", err);
         setError("Failed to initialize encryption keys");
       });
-    // console.log("fingerprint", fingerprint);
-
-    socket.on("room:messages", async ({ roomId, messages }) => {
-      if (!store.current) return;
-      console.log(
-        "Received socket messages:",
-        JSON.stringify(messages, null, 2)
-      );
-
-      // setRoomMessages((prev) => ({
-      //   ...prev,
-      //   [roomId]: messages,
-      // }));
-      try {
-        console.log("inside try block of decrypting mssg");
-        const decryptedMessages = await Promise.all(
-          messages.map(async (msg: any) => {
-            if (!msg.ciphertexts) console.log("no cipher texts");
-            if (!msg.ciphertexts) return null;
-
-            try {
-              console.log(msg, "mssg");
-
-              console.log(msg.length, "mssg length");
-
-              const userCiphertexts = msg.ciphertexts?.[userId];
-
-              const ciphertext = userCiphertexts?.[deviceId];
-              console.log(ciphertext, "cipher text");
-              console.log(deviceId, "device id");
-
-              console.log("Ciphertexts keys:", Object.keys(msg.ciphertexts));
-              if (!ciphertext) {
-                console.warn("No ciphertext for", userId, deviceId, msg);
-                // return null;
-              }
-              const content = await decryptMessage(
-                msg.sender._id,
-                deviceId,
-                ciphertext,
-                store.current!
-              );
-
-              console.log("content", content);
-              return {
-                id: msg._id,
-                content,
-                senderId: msg.sender._id,
-                name: msg.sender.name,
-                createdAt: msg.createdAt,
-                roomId,
-              };
-            } catch (err) {
-              console.error(`Error decrypting message ${msg._id}:`, err);
-              return null;
-            }
-          })
-        );
-        setRoomMessages((prev) => ({
-          ...prev,
-          [roomId]: decryptedMessages.filter(
-            (msg): msg is Message => msg !== null
-          ),
-        }));
-      } catch (error) {
-        console.error("Error processing room messages:", error);
-        setError("Failed to load messages");
-      }
-    });
 
     socket.on("newRoomMessage", (message) => {
       const roomId = message.roomId;
@@ -153,46 +82,90 @@ export default function Chat() {
     };
   }, []);
 
+  const testDecryption = async () => {
+    console.log("inside test decryption");
+    console.log("userMessagesFromApi", userMessagesFromApi);
+    const store = await SignalProtocolStore.initialize(userId);
+    const room = rooms?.find((room) => room._id === selectedRoomId);
+    console.log(room, store, userMessagesFromApi);
+    if (!room || !store || !userMessagesFromApi) {
+      console.log("no room store or mssgƒ");
+    }
+
+    // const lastMessage = userMessagesFromApi[userMessagesFromApi.length - 1];
+    // const ciphertext = lastMessage.content;
+
+    const lastMessage =
+      userMessagesFromApi.messages[userMessagesFromApi.messages.length - 1];
+    const ciphertext = lastMessage.content;
+    console.log("Hardcoded Ciphertext:", ciphertext);
+    console.log("Is Base64:", isBase64(ciphertext));
+    console.log("Buffer Length:", Buffer.from(ciphertext, "base64").length);
+    console.log(
+      userId,
+      room.deviceId,
+      room._id.toString(),
+      store,
+      "decrypttest"
+    );
+    const keyVersion = await store.getLatestRoomKeyVersion(room._id.toString());
+
+    const decrypted = await decryptMessage(
+      userId,
+      room.deviceId,
+      room._id.toString(),
+      ciphertext,
+      keyVersion,
+      store
+    );
+
+    console.log("Encrypted:", ciphertext);
+    console.log("Decrypted:", decrypted);
+  };
+
+  const testDecryptionNew = async () => {
+    console.log("insdide test decryption");
+    const store = await SignalProtocolStore.initialize(userId);
+    const room = rooms?.find((room) => room._id === selectedRoomId);
+    if (!room || !store) return;
+
+    const testMessage = "Hello, this is a test!";
+    const { ciphertext } = await encryptMessage(
+      userId,
+      room,
+      testMessage,
+      store
+    );
+    console.log(userId, room.deviceId, room._id.toString(), store, "test new");
+
+    const keyVersion = await store.getLatestRoomKeyVersion(room._id.toString());
+
+    const decrypted = await decryptMessage(
+      userId,
+      room.deviceId,
+      room._id.toString(),
+      ciphertext,
+      keyVersion,
+      store
+    );
+
+    console.log("Encrypted:", ciphertext);
+    console.log("Decrypted:", decrypted);
+  };
+
+  console.log(userMessagesFromApi, "userMessagesfromApi");
+
   useEffect(() => {
     if (selectedRoomId) {
       socket.emit("joinRoom", { roomId: selectedRoomId });
     }
   }, [selectedRoomId]);
 
-  // const handleSendMessage = async () => {
-  //   if (!newMessage.trim() || !selectedRoomId || !store.current) {
-  //     console.log("no room, store or mssg");
-  //     return;
-  //   }
-
-  //   const currentRoom = rooms?.find((room) => room._id === selectedRoomId);
-  //   if (!currentRoom) return;
-
-  //   try {
-  //     const encryptedPayloads = await encryptMessage(
-  //       userId,
-  //       currentRoom,
-  //       newMessage,
-  //       store.current
-  //     );
-
-  //     socket.emit("sendMessageToRoom", {
-  //       roomId: selectedRoomId,
-  //       encryptedPayloads: encryptedPayloads,
-  //     });
-
-  //     console.log("Encrypted messages", encryptedPayloads);
-
-  //     setNewMessage("");
-  //     setError(null);
-  //   } catch (error) {
-  //     console.error("Error encrypting message:", error);
-  //     setError("Failed to send message");
-  //   }
-  // };
-
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !selectedRoomId || !store.current) {
+    console.log(userId, "user id from token");
+    const store = await SignalProtocolStore.initialize(userId);
+
+    if (!newMessage.trim() || !selectedRoomId || !store) {
       console.log("no room, store or mssg");
       return;
     }
@@ -203,16 +176,17 @@ export default function Chat() {
     if (!currentRoom) return;
 
     try {
-      const { roomId, ciphertext } = await encryptMessage(
+      const { roomId, ciphertext, keyVersion } = await encryptMessage(
         userId,
         currentRoom,
         newMessage,
-        store.current!
+        store!
       );
 
       socket.emit("sendMessageToRoom", {
         roomId: roomId,
         content: ciphertext,
+        keyVersion
       });
 
       console.log("Encrypted message:", roomId, ciphertext);
@@ -227,6 +201,8 @@ export default function Chat() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+      testDecryption();
+      testDecryptionNew();
     }
   };
 

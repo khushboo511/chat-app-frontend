@@ -8,7 +8,6 @@ import {
 } from "@privacyresearch/libsignal-protocol-typescript";
 import { Buffer } from "buffer";
 import { isBase64 } from "validator";
-import { versions } from "process";
 
 (window as any).Buffer = Buffer;
 
@@ -90,25 +89,12 @@ class SignalProtocolStore {
     await this.db.delete("keys", `preKey.${keyId}`);
   }
 
-  async storeRoomSharedKey(
-    roomId: string,
-    version: number,
-    key: Buffer
-  ): Promise<void> {
+  async storeRoomSharedKey(roomId: string, key: Buffer): Promise<void> {
     await this.put(`roomKey.${roomId}`, key);
-    await this.put(`roomKey.${roomId}.v${version}`, key);
-    await this.put(`roomKeyVersion.${roomId}`, version);
   }
 
-  async getRoomSharedKey(
-    roomId: string,
-    version: number
-  ): Promise<Buffer | undefined> {
-    return this.get(`roomKey.${roomId}.v${version}`);
-  }
-
-  async getLatestRoomKeyVersion(roomId: string): Promise<number> {
-    return this.get(`roomKeyVersion.${roomId}`, 1);
+  async getRoomSharedKey(roomId: string): Promise<Buffer | undefined> {
+    return this.get(`roomKey.${roomId}`);
   }
 }
 
@@ -188,9 +174,10 @@ export async function generateRoomSharedKey(
   for (const member of room.members) {
     const recipientId = member.userId.toString();
     const memberKeys: { deviceId: string; key: string }[] = [];
-    const res = await fetch(`http://localhost:3000/user/keys/${recipientId}`, {
-      credentials: "include",
-    });
+    const res = await fetch(
+      `http://localhost:3000/user/api/keys/${recipientId}`,
+      { credentials: "include" }
+    );
     const keyBundle = await res.json();
     if (!keyBundle?.devices || keyBundle.devices.length === 0) {
       console.warn(`No devices found for ${recipientId}`);
@@ -235,11 +222,7 @@ export async function generateRoomSharedKey(
     });
   }
 
-  // await store.storeRoomSharedKey(roomId, sharedKey);
-  const currentVersion = await store.getLatestRoomKeyVersion(roomId);
-  console.log(currentVersion);
-  const newVersion = currentVersion + 1;
-  await store.storeRoomSharedKey(roomId, newVersion, sharedKey);
+  await store.storeRoomSharedKey(roomId, sharedKey);
 
   await fetch(`http://localhost:3016/room/${roomId}/shared-key`, {
     method: "POST",
@@ -253,12 +236,11 @@ export async function getRoomSharedKey(
   userId: string,
   deviceId: string,
   roomId: string,
-  store: SignalProtocolStore,
-  version: number
+  store: SignalProtocolStore
 ): Promise<Buffer> {
-  let sharedKey = await store.getRoomSharedKey(roomId, version);
+  let sharedKey = await store.getRoomSharedKey(roomId);
   if (sharedKey) {
-    console.log(`Retrieved cached v${version} key for room ${roomId}`);
+    console.log(`Retrieved cached shared key for room ${roomId}`);
     return sharedKey;
   }
 
@@ -273,16 +255,16 @@ export async function getRoomSharedKey(
   if (!member) {
     throw new Error(`No member found for ${userId} in room ${roomId}`);
   }
-
   const encryptedKeyEntry = member.encryptedSecretKeys.find(
-    (entry: any) => entry.deviceId === deviceId && entry.version === version
+    (entry: any) => entry.deviceId === deviceId
   );
 
   if (!encryptedKeyEntry) {
     throw new Error(
-      `No encrypted shared key v${version} for ${userId}-${deviceId} in room ${roomId}`
+      `No encrypted shared key found for ${userId}-${deviceId} in room ${roomId}`
     );
   }
+
   const address = new SignalProtocolAddress(`${userId}-${deviceId}`, 1);
   const sessionCipher = new SessionCipher(store as any, address);
   const plaintext = await sessionCipher.decryptPreKeyWhisperMessage(
@@ -290,7 +272,7 @@ export async function getRoomSharedKey(
     "binary"
   );
   sharedKey = Buffer.from(plaintext);
-  await store.storeRoomSharedKey(roomId, version, sharedKey);
+  await store.storeRoomSharedKey(roomId, sharedKey);
   console.log(`Decrypted and stored shared key for room ${roomId}`);
   return sharedKey;
 }
@@ -300,15 +282,13 @@ export async function encryptMessage(
   room: any,
   message: string,
   store: SignalProtocolStore
-): Promise<{ roomId: string; ciphertext: string; keyVersion: number }> {
+): Promise<{ roomId: string; ciphertext: string }> {
   const roomId = room._id.toString();
-  const keyVersion = await store.getLatestRoomKeyVersion(roomId);
   const sharedKey = await getRoomSharedKey(
-    userId, 
+    userId,
     room.deviceId,
     roomId,
-    store,
-    keyVersion
+    store
   );
   console.log(
     Buffer.from(sharedKey).toString("hex"),
@@ -345,16 +325,16 @@ export async function encryptMessage(
   console.log(combined, "combined 3");
 
   const combinedBase64 = Buffer.from(combined).toString("base64");
-  return { roomId, ciphertext: combinedBase64, keyVersion };
+  return { roomId, ciphertext: combinedBase64 };
   // console.log(`  Encrypted message for room ${roomId}:`, ciphertext);
 }
+
 
 export async function decryptMessage(
   userId: string,
   deviceId: string,
   roomId: string,
   ciphertext: string,
-  keyVersion: number,
   store: SignalProtocolStore
 ): Promise<string> {
   if (!ciphertext || !isBase64(ciphertext)) {
@@ -363,14 +343,8 @@ export async function decryptMessage(
   }
 
   try {
-    const sharedKey = await getRoomSharedKey(
-      userId,
-      deviceId,
-      roomId,
-      store,
-      keyVersion
-    );
-    console.log(`Shared key v${keyVersion} for room ${roomId}:`, sharedKey);
+    const sharedKey = await getRoomSharedKey(userId, deviceId, roomId, store);
+    console.log("shared key", sharedKey);
     const combined = Buffer.from(ciphertext, "base64");
 
     if (combined.length < 12) {
@@ -414,3 +388,5 @@ export async function getIdentityFingerprint(
 }
 
 export { SignalProtocolStore };
+
+
